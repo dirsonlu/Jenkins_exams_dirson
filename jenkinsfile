@@ -7,6 +7,8 @@ pipeline {
         MOVIE_IMAGE = 'luddirs/movie-service'
         CAST_IMAGE  = 'luddirs/cast-service'
 
+        KUBECONFIG = '/etc/rancher/k3s/k3s.yaml'
+
         KUBE_NAMESPACE_DEV     = 'dev'
         KUBE_NAMESPACE_QA      = 'qa'
         KUBE_NAMESPACE_STAGING = 'staging'
