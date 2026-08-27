@@ -3,11 +3,13 @@ kind: Service
 metadata:
   name: movie-service
 spec:
-  type: NodePort
+  type: {{ .Values.service.type }}
   ports:
     - port: 8000
       targetPort: 8000
-      nodePort: 30007
       protocol: TCP
+      {{- if eq .Values.service.type "NodePort" }}
+      nodePort: {{ .Values.service.nodePort }}
+      {{- end }}
   selector:
     app: movie-service
