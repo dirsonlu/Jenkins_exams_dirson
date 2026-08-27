@@ -1,0 +1,31 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cast-service
+  labels:
+    app: cast-service
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app: cast-service
+  template:
+    metadata:
+      labels:
+        app: cast-service
+    spec:
+      containers:
+        - name: cast-service
+          image: "{{ .Values.castService.image.repository }}:{{ .Values.castService.image.tag }}"
+          imagePullPolicy: {{ .Values.castService.image.pullPolicy }}
+          env:
+            - name: DATABASE_URI
+              value: "{{ .Values.castService.databaseUrl }}"
+          ports:
+            - containerPort: 8000
+          livenessProbe:
+            tcpSocket:
+              port: 8000
+          readinessProbe:
+            tcpSocket:
+              port: 8000

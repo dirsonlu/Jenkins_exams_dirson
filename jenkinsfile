@@ -1,0 +1,196 @@
+pipeline {
+    agent any
+
+    environment {
+        DOCKERHUB_USER = 'luddirs'
+
+        MOVIE_IMAGE = 'luddirs/movie-service'
+        CAST_IMAGE  = 'luddirs/cast-service'
+
+        KUBE_NAMESPACE_DEV     = 'dev'
+        KUBE_NAMESPACE_QA      = 'qa'
+        KUBE_NAMESPACE_STAGING = 'staging'
+        KUBE_NAMESPACE_PROD    = 'prod'
+    }
+
+    stages {
+
+        stage('Checkout') {
+            steps {
+                checkout scm
+            }
+        }
+
+        stage('Tests') {
+            steps {
+                sh '''
+                    set -e
+
+                    echo "=== Vérification Python movie-service ==="
+                    python3 -m py_compile movie-service/app/main.py
+
+                    echo "=== Vérification Python cast-service ==="
+                    python3 -m py_compile cast-service/app/main.py
+
+                    echo "=== Vérification Helm ==="
+                    helm lint charts
+
+                    echo "Tests de validation terminés."
+                '''
+            }
+        }
+
+        stage('Build Docker Images') {
+            steps {
+                sh '''
+                    set -e
+
+                    docker build -t ${MOVIE_IMAGE}:${BUILD_NUMBER} ./movie-service
+                    docker build -t ${CAST_IMAGE}:${BUILD_NUMBER} ./cast-service
+
+                    docker tag ${MOVIE_IMAGE}:${BUILD_NUMBER} ${MOVIE_IMAGE}:latest
+                    docker tag ${CAST_IMAGE}:${BUILD_NUMBER} ${CAST_IMAGE}:latest
+                '''
+            }
+        }
+
+        stage('Push DockerHub') {
+            steps {
+                withCredentials([
+                    usernamePassword(
+                        credentialsId: 'dockerhub',
+                        usernameVariable: 'DOCKER_USER',
+                        passwordVariable: 'DOCKER_PASSWORD'
+                    )
+                ]) {
+                    sh '''
+                        set -e
+
+                        echo "$DOCKER_PASSWORD" | docker login \
+                            -u "$DOCKER_USER" \
+                            --password-stdin
+
+                        docker push ${MOVIE_IMAGE}:${BUILD_NUMBER}
+                        docker push ${MOVIE_IMAGE}:latest
+
+                        docker push ${CAST_IMAGE}:${BUILD_NUMBER}
+                        docker push ${CAST_IMAGE}:latest
+
+                        docker logout
+                    '''
+                }
+            }
+        }
+
+        stage('Create Kubernetes Namespaces') {
+            steps {
+                sh '''
+                    set -e
+
+                    kubectl create namespace ${KUBE_NAMESPACE_DEV} \
+                        --dry-run=client -o yaml | kubectl apply -f -
+
+                    kubectl create namespace ${KUBE_NAMESPACE_QA} \
+                        --dry-run=client -o yaml | kubectl apply -f -
+
+                    kubectl create namespace ${KUBE_NAMESPACE_STAGING} \
+                        --dry-run=client -o yaml | kubectl apply -f -
+
+                    kubectl create namespace ${KUBE_NAMESPACE_PROD} \
+                        --dry-run=client -o yaml | kubectl apply -f -
+                '''
+            }
+        }
+
+        stage('Deploy DEV') {
+            steps {
+                sh '''
+                    set -e
+
+                    helm upgrade --install myapp-dev charts \
+                        --namespace ${KUBE_NAMESPACE_DEV} \
+                        --create-namespace \
+                        --set movieService.image.tag=${BUILD_NUMBER} \
+                        --set castService.image.tag=${BUILD_NUMBER} \
+                        --set service.type=ClusterIP
+                '''
+            }
+        }
+
+        stage('Deploy QA') {
+            steps {
+                sh '''
+                    set -e
+
+                    helm upgrade --install myapp-qa charts \
+                        --namespace ${KUBE_NAMESPACE_QA} \
+                        --create-namespace \
+                        --set movieService.image.tag=${BUILD_NUMBER} \
+                        --set castService.image.tag=${BUILD_NUMBER} \
+                        --set service.type=ClusterIP
+                '''
+            }
+        }
+
+        stage('Deploy STAGING') {
+            steps {
+                sh '''
+                    set -e
+
+                    helm upgrade --install myapp-staging charts \
+                        --namespace ${KUBE_NAMESPACE_STAGING} \
+                        --create-namespace \
+                        --set movieService.image.tag=${BUILD_NUMBER} \
+                        --set castService.image.tag=${BUILD_NUMBER} \
+                        --set service.type=ClusterIP
+                '''
+            }
+        }
+
+        stage('Deploy PRODUCTION') {
+            when {
+                branch 'master'
+            }
+
+            input {
+                message "Déployer la version ${BUILD_NUMBER} en PRODUCTION ?"
+                ok "Déployer"
+                submitterParameter "DEPLOYER"
+            }
+
+            steps {
+                sh '''
+                    set -e
+
+                    helm upgrade --install myapp-prod charts \
+                        --namespace ${KUBE_NAMESPACE_PROD} \
+                        --create-namespace \
+                        --set movieService.image.tag=${BUILD_NUMBER} \
+                        --set castService.image.tag=${BUILD_NUMBER} \
+                        --set service.type=NodePort \
+                        --set service.nodePort=30007
+                '''
+            }
+        }
+    }
+
+    post {
+        success {
+            echo '========================================='
+            echo 'PIPELINE TERMINEE AVEC SUCCES'
+            echo '========================================='
+        }
+
+        failure {
+            echo '========================================='
+            echo 'PIPELINE EN ECHEC'
+            echo '========================================='
+        }
+
+        always {
+            sh '''
+                docker image prune -f || true
+            '''
+        }
+    }
+}

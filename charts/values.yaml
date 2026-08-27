@@ -1,16 +1,26 @@
 replicaCount: 3
 
-image:
-  repository: luddirs/kubernetes-devops-project-fastapi
-  pullPolicy: Always
-  tag: "latest"
+movieService:
+  image:
+    repository: luddirs/movie-service
+    tag: "latest"
+    pullPolicy: Always
 
-env:
-  DATABASE_URL: "postgresql://admin:password@db:5432/storedb"
+  databaseUrl: "postgresql://movie_db_username:movie_db_password@movie-db:5432/movie_db_dev"
 
-imagePullSecrets: []
-nameOverride: ""
-fullnameOverride: ""
+castService:
+  image:
+    repository: luddirs/cast-service
+    tag: "latest"
+    pullPolicy: Always
+
+  databaseUrl: "postgresql://cast_db_username:cast_db_password@cast-db:5432/cast_db_dev"
+
+service:
+  type: NodePort
+  port: 5000
+  targetPort: 5000
+  nodePort: 30007
 
 serviceAccount:
   create: true
@@ -23,22 +33,7 @@ podSecurityContext: {}
 
 securityContext: {}
 
-service:
-  type: NodePort
-  port: 5000
-  targetPort: 5000
-  nodePort: 30007
-
-ingress:
-  enabled: false
-  className: ""
-  annotations: {}
-  hosts:
-    - host: chart-example.local
-      paths:
-        - path: /
-          pathType: ImplementationSpecific
-  tls: []
+imagePullSecrets: []
 
 resources: {}
 
@@ -54,5 +49,5 @@ tolerations: []
 
 affinity: {}
 
-database:
-  url: "postgresql://admin:password@db:5432/storedb"
+ingress:
+  enabled: false
